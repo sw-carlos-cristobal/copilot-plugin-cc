@@ -16,7 +16,8 @@ import {
     getCopilotAvailability,
     getCopilotLoginStatus,
     getSessionRuntimeStatus,
-    parseStructuredOutput
+    parseStructuredOutput,
+    shutdownClient
   } from "./lib/copilot-client.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { collectReviewContext, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
@@ -949,13 +950,26 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  const isAuthError = /auth|login|unauthenticated|unauthorized|not signed in|credentials/i.test(message);
-  if (isAuthError) {
-    process.stderr.write(`Copilot authentication failed. Run \`!copilot login\` to authenticate and retry.\n`);
-  } else {
-    process.stderr.write(`${message}\n`);
-  }
-  process.exitCode = 1;
-});
+// The SDK-managed Copilot CLI runs as a child process with open stdio/JSON-RPC
+// handles. Once a command completes the result is produced and flushed, but
+// those handles keep Node's event loop alive, so the process hangs forever and
+// foreground callers (rescue agents, the auto-review hook) never get control
+// back. shutdownClient() tears the child down; then we exit explicitly.
+async function finish(code) {
+  await shutdownClient().catch(() => {});
+  await new Promise((resolve) => process.stdout.write("", resolve));
+  process.exit(code);
+}
+
+main()
+  .then(() => finish(typeof process.exitCode === "number" ? process.exitCode : 0))
+  .catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    const isAuthError = /auth|login|unauthenticated|unauthorized|not signed in|credentials/i.test(message);
+    if (isAuthError) {
+      process.stderr.write(`Copilot authentication failed. Run \`!copilot login\` to authenticate and retry.\n`);
+    } else {
+      process.stderr.write(`${message}\n`);
+    }
+    finish(1);
+  });
