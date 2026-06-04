@@ -1,6 +1,13 @@
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { binaryAvailable, runCommand } from "./process.mjs";
 
 const SESSION_ID_ENV = "COPILOT_COMPANION_SESSION_ID";
+// Plugin root (…/plugins/copilot) is two levels up from scripts/lib/.
+const PLUGIN_ROOT = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
+const SDK_PACKAGE = "@github/copilot-sdk@^0.3.0";
 const DEFAULT_CONTINUE_PROMPT =
   "Continue from the current thread state. Pick the next highest-value step and follow through until the task is resolved.";
 const TASK_SESSION_PREFIX = "Copilot Companion Task";
@@ -14,10 +21,43 @@ function shorten(text, limit = 72) {
   return `${normalized.slice(0, limit - 3)}...`;
 }
 
+function isModuleNotFound(err) {
+  return (
+    err?.code === "ERR_MODULE_NOT_FOUND" ||
+    /Cannot find package '@github\/copilot-sdk'/.test(String(err?.message ?? ""))
+  );
+}
+
+function provisionSdk() {
+  // Claude Code does not npm-install plugin dependencies, so the SDK is absent
+  // after a fresh install/update and on new machines. Install it into the plugin
+  // root on demand. npm resolves the correct per-OS Copilot binary, so this works
+  // cross-platform (unlike vendoring node_modules into git).
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  const result = spawnSync(
+    npm,
+    ["install", SDK_PACKAGE, "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"],
+    { cwd: PLUGIN_ROOT, stdio: "inherit", shell: process.platform === "win32" }
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `Failed to provision ${SDK_PACKAGE}. Run \`npm install ${SDK_PACKAGE}\` in ${PLUGIN_ROOT}, then retry.`
+    );
+  }
+}
+
 async function getCopilotClient() {
-  // Lazy import to allow tests to run without the real SDK installed
-  const { CopilotClient } = await import("@github/copilot-sdk");
-  return CopilotClient;
+  // Lazy import; self-heal the dependency if the plugin dir has no node_modules yet.
+  try {
+    const { CopilotClient } = await import("@github/copilot-sdk");
+    return CopilotClient;
+  } catch (err) {
+    if (!isModuleNotFound(err)) throw err;
+    process.stderr.write("Provisioning @github/copilot-sdk (one-time, this may take a moment)...\n");
+    provisionSdk();
+    const { CopilotClient } = await import("@github/copilot-sdk");
+    return CopilotClient;
+  }
 }
 
 export async function ensureClient() {
