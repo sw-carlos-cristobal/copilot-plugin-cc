@@ -144,7 +144,12 @@ export async function runPrompt(session, prompt, options = {}) {
     }
   });
 
-  const response = await session.sendAndWait({ prompt });
+  // sendAndWait's default idle timeout is only 60s; agentic reviews/tasks (which
+  // use tools, web fetches, etc.) routinely run longer and would otherwise abort
+  // with "Timeout after 60000ms waiting for session.idle". Use a generous,
+  // overridable timeout instead.
+  const idleTimeoutMs = Number(process.env.COPILOT_COMPANION_IDLE_TIMEOUT_MS) || 600000;
+  const response = await session.sendAndWait({ prompt }, idleTimeoutMs);
   const content = response?.data?.content ?? chunks.join("");
 
   return {

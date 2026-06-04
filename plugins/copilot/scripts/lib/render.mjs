@@ -209,6 +209,18 @@ export function renderSetupReport(report) {
 }
 
 export function renderReviewResult(parsedResult, meta) {
+  // Plain (non-adversarial) reviews intentionally return prose, not structured
+  // JSON, so render the raw review directly instead of reporting a parse failure.
+  if (meta.plain) {
+    const lines = [`# Copilot ${meta.reviewLabel}`, ""];
+    if (meta.targetLabel) {
+      lines.push(`Target: ${meta.targetLabel}`, "");
+    }
+    lines.push(parsedResult.rawOutput?.trim() || "Copilot returned no output.");
+    appendReasoningSection(lines, meta.reasoningSummary ?? parsedResult.reasoningSummary);
+    return `${lines.join("\n").trimEnd()}\n`;
+  }
+
   if (!parsedResult.parsed) {
     const lines = [
       `# Copilot ${meta.reviewLabel}`,

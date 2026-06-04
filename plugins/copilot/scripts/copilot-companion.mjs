@@ -387,7 +387,7 @@ async function executeReviewRun(request) {
     payload,
     rendered: renderReviewResult(
       { parsed: null, parseError: null, rawOutput },
-      { reviewLabel: reviewName, targetLabel: context.target.label, reasoningSummary: [] }
+      { reviewLabel: reviewName, targetLabel: context.target.label, reasoningSummary: [], plain: true }
     ),
     summary: firstMeaningfulLine(rawOutput, `${reviewName} completed.`),
     jobTitle: `Copilot ${reviewName}`,

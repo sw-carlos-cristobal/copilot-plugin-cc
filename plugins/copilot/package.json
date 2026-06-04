@@ -1,6 +1,6 @@
 {
   "name": "@github/copilot-plugin-cc-copilot",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "private": true,
   "description": "Copilot plugin runtime for Claude Code (companion). Declares the Copilot SDK so plugin installs provision it.",
   "type": "module",
